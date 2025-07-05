@@ -1,3 +1,26 @@
+# What Is Incremental Data Load?
+Incremental data load refers to the process of loading only new or changed data from a source system into a destination, rather than loading the entire dataset every time.
+Characteristics of Incremental Data Load:
+1) We need to process only newly/ modified data files
+2) We need to process the data ASAP, when the new/ modified  data is detected
+3) We should not miss any new files
+4) We also need to make sure that we have good performance even when we are processing large directories.
+5) We should be able to make it a repeatable process by making it a scheduled job.
+
+
+# Common Patterns of Incremental loading:
+
+1.	**Watermark Method**:
+- Traditional and most popular method
+- Watermarking is a technique used to identify the last successfully loaded value (usually a timestamp or an incremental key like LastModifiedDate, UpdatedDate, or ID) to track changes.
+- **How does It Work?**
+1) You store the last loaded value (called the watermark) somewhere (in a table, variable, or config).
+2) During the next load, you fetch only rows greater than this watermark.
+3) After loading, update the watermark with the new maximum value loaded
+
+
+
+
 # 📦 Incremental ETL Load in SQL Server
 
 This project demonstrates an **Incremental ETL (Extract, Transform, Load)** process using **T-SQL** in SQL Server. It uses a watermarking technique to load only new or updated records from a source table into a data warehouse (DWH) table.
