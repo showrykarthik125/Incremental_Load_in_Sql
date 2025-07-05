@@ -168,6 +168,166 @@ SELECT * FROM DWH_Orders;
 
 ---
 
+# 📦 Incremental ETL Load in Azure Data Factory using the same above tables
+
+This project demonstrates an **Incremental ETL (Extract, Transform, Load)** process using **T-SQL** in SQL Server and Azure Data Factory. It uses a watermarking technique to load only new or updated records from a source table into a data warehouse (DWH) table.
+
+---
+
+## 🧱 Architecture Overview
+
+- **Source Table:** `Orders`
+- **Watermark Table:** `ETL_Watermark`
+- **Target Table:** `DWH_Orders`
+- **ADF Components Used:** Lookup, Copy Data, Stored Procedure
+
+
+## 🪜 Step-by-Step: Building the ADF Pipeline
+
+### 🔗 Step 1: Create Linked Services
+
+1. **Go to Manage > Linked services > + New**
+2. Choose:
+   - **Source**: Azure SQL Database (for `Orders`)
+   - **Sink**: Azure SQL Database (for `DWH_Orders`)
+   - **simply for this project I am creating another table as DWH_Orders in the same database which is *Sales* so one Linked Serive is suffiecient for this project**
+3. Configure the Linked Service:
+   - Name: `Sales_Database_Linked_service` 
+   - Provide server name, database, authentication method
+   - Test connection → Create
+
+![image](https://github.com/user-attachments/assets/04d30e07-4249-4b55-8ba9-a2d641fceb22)
+
+---
+
+### 📂 Step 2: Create Datasets
+
+1. **Go to Author > Datasets > + New Dataset**
+2. Select **Azure SQL Database**, linked to:
+   - `Sales_Database_Linked_service` for `Orders`
+   - `Sales_Database_Linked_service` for `DWH_Orders`
+   - `Sales_Database_Linked_service` for `ETL_Watermark`
+3. **Configure Three datasets**:
+   - Dataset for source Table: `Orders` as name it as `Source_Table`
+   - Dataset for target Table: `DWH_Orders` and name it as `Destination_Table`
+   - Dataset for WaterMark Table: `ETL_Watermark` and name it as `WaterMark`
+   - Select the table name.
+  
+
+![image](https://github.com/user-attachments/assets/1f1bab12-869b-470d-8e39-e4c4a25521d0)
+
+
+---
+
+### 🧪 Step 3: Create the Pipeline
+
+1. **Create new pipeline**: `Incremental_Data_Load`
+
+#### 🔍 3.1 Add Lookup: GetLastWatermark
+
+- **Activity Name**: `GetLastWatermark`
+- Type: **Lookup**
+- Dataset: select the `WaterMark` dataset
+- Query:
+  ```sql
+  SELECT LastLoadedValue FROM ETL_Watermark WHERE TableName = 'Orders'
+  ```
+
+![image](https://github.com/user-attachments/assets/15b5ce43-d081-4671-9ee8-74d26f2e8c95)
+
+
+#### 📥 3.2 Add Copy Data: CopyNewOrders
+
+- **Source**:
+  - Dataset: `DS_Orders`
+  - Use **Query** option:
+    ```sql
+    SELECT * FROM Orders
+    WHERE LastModifiedDate > '@{activity('GetLastWatermark').output.firstRow.LastLoadedValue}'
+    ```
+- **Sink**:
+  - Dataset: `DS_DWH_Orders`
+- **Mapping Tab**:
+  - Enable *Mapping* manually
+  - Set **OrderID** as the *Upsert Key* in mapping
+  - Enable *Allow Upsert* or *Insert + Update*
+
+
+![image](https://github.com/user-attachments/assets/b3781969-7590-4b22-af29-635cc2b51fb2)
+
+![image](https://github.com/user-attachments/assets/7e140388-d9d7-4ddf-8d0b-e0680efc2998)
+
+
+#### 🕓 3.3 Add Lookup: GetMaxWaterMark : ater the the data is update/inserted we need to get the watermark so that it needs to be updated in the water mark table
+
+- **Activity Name**: `GetMaxWaterMark`
+- Dataset: pointing to `DWH_Orders`
+- Query:
+  ```sql
+  SELECT MAX(LastModifiedDate) AS MaxWatermark FROM DWH_Orders
+  ```
+
+![image](https://github.com/user-attachments/assets/454fec4f-cf68-41a9-a000-0556e96d77d0)
+
+#### ⚙️ 3.4 Add Stored Procedure: UpdateWatermark
+
+- **Activity Name**: `UpdateWatermark`
+- **Type**: Stored Procedure activity
+- **Linked Service**: `Sales_Database_Linked_service` (pointing to your target Azure SQL database which is the same in our case)
+- **Stored Procedure Name**: `sp_UpdateWatermark`
+- - **Parameters**:
+  ```json
+  {
+    "TableName": "Orders",
+    "LastLoadedValue": "@activity('GetMaxModifiedDate').output.firstRow.MaxWatermark"
+  }
+  ```
+
+- **Stored Procedure Definition** (run this on your Azure SQL DB before using the activity):
+```sql
+CREATE PROCEDURE sp_UpdateWatermark
+    @TableName NVARCHAR(100),
+    @LastLoadedValue DATETIME
+AS
+BEGIN
+    IF EXISTS (SELECT 1 FROM ETL_Watermark WHERE TableName = @TableName)
+    BEGIN
+        UPDATE ETL_Watermark
+        SET LastLoadedValue = @LastLoadedValue
+        WHERE TableName = @TableName
+    END
+    ELSE
+    BEGIN
+        INSERT INTO ETL_Watermark (TableName, LastLoadedValue)
+        VALUES (@TableName, @LastLoadedValue)
+    END
+END
+```
+
+---
+
+### 🚦 Step 5: Publish and Trigger
+
+1. Click **Validate** to check for any errors
+2. Use the **Debug** button to test the pipeline and verify each step works as expected.
+3. Click **Publish All** to deploy your changes.
+4. Once verified, click **Add Trigger > Trigger Now** to run it immediately.
+5. Optionally, create a **trigger schedule**:
+   - Go to the pipeline canvas
+   - Click **Add Trigger > New/Edit**
+   - Define a schedule (e.g., every 1 hour, daily, etc.)
+   - Save and activate the trigger
+
+> ✅ Your pipeline now performs incremental loads using the Watermark pattern on a scheduled or manual basis.
+
+
+
+![image](https://github.com/user-attachments/assets/21f3525c-03ab-4b22-8c4e-12739f034b44)
+
+![image](https://github.com/user-attachments/assets/66a820cf-012f-4089-8e95-6967d2584734)
+
+
+
 ## 📎 License
 
 This project is licensed under the MIT License. Feel free to use and modify it for your own data pipeline needs.
